@@ -254,7 +254,13 @@ class WC_Quick_Buy_Table {
             wc_load_cart();
         }
 
-        $products = $this->get_products_for_current_user();
+        $products        = $this->get_products_for_current_user();
+        $cart_quantities = $this->get_cart_quantities();
+        $cart_only_products = $this->get_cart_products_not_in_list( array_keys( $products ), $cart_quantities );
+
+        if ( ! empty( $cart_only_products ) ) {
+            $products = $products + $cart_only_products;
+        }
 
         if ( empty( $products ) ) {
             return $this->get_no_products_markup();
@@ -262,10 +268,9 @@ class WC_Quick_Buy_Table {
 
         $this->enqueue_assets();
 
-        $cart_quantities = $this->get_cart_quantities();
         $grouped         = $this->group_products_by_category( $products, $cart_quantities );
         $cart_label      = __( 'Producten al in je winkelwagen', 'wc-quick-buy-table' );
-        $cart_note       = __( 'Deze producten staan al in je winkelwagen en worden bovenaan getoond.', 'wc-quick-buy-table' );
+        $cart_note       = __( 'Deze producten staan al in je winkelwagen (ook als ze niet in je bestellijst staan) en worden bovenaan getoond.', 'wc-quick-buy-table' );
         $empty_text      = __( 'Nog geen producten geselecteerd.', 'wc-quick-buy-table' );
         $summary_title   = __( 'Bestellingsoverzicht', 'wc-quick-buy-table' );
         $toggle_open     = __( 'Bekijk bestelling', 'wc-quick-buy-table' );
@@ -730,6 +735,48 @@ class WC_Quick_Buy_Table {
         }
 
         return $ordered_groups;
+    }
+
+    /**
+     * Retrieve cart products that are not part of the configured quick order list.
+     *
+     * @param array $existing_product_ids Product IDs already in the quick order list.
+     * @param array $cart_quantities      Quantities indexed by product/variation id.
+     *
+     * @return WC_Product[]
+     */
+    protected function get_cart_products_not_in_list( $existing_product_ids, $cart_quantities ) {
+        $products        = [];
+        $existing_lookup = [];
+
+        foreach ( (array) $existing_product_ids as $product_id ) {
+            $existing_lookup[ (int) $product_id ] = true;
+        }
+
+        if ( ! WC()->cart ) {
+            return $products;
+        }
+
+        foreach ( WC()->cart->get_cart() as $item ) {
+            if ( empty( $item['data'] ) || ! $item['data'] instanceof WC_Product ) {
+                continue;
+            }
+
+            $product    = $item['data'];
+            $product_id = (int) $product->get_id();
+
+            if ( isset( $existing_lookup[ $product_id ] ) ) {
+                continue;
+            }
+
+            if ( empty( $cart_quantities[ $product_id ] ) ) {
+                continue;
+            }
+
+            $products[ $product_id ] = $product;
+        }
+
+        return $products;
     }
 
     /**
