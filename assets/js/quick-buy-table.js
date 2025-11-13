@@ -226,9 +226,14 @@
             expanded = !expanded;
             $toggle.attr('aria-expanded', expanded ? 'true' : 'false');
             $floating.toggleClass('wc-qbt-floating-summary--expanded', expanded);
-            $floating.find('.wc-qbt-floating-summary__panel').attr('hidden', !expanded);
+            $floating.find('.wc-qbt-floating-summary__panel').prop('hidden', !expanded);
             $floating.find('.wc-qbt-floating-summary__toggle-text').text(expanded ? closeLabel : openLabel);
         });
+
+        // Ensure the panel respects the initial collapsed state on load.
+        $floating.removeClass('wc-qbt-floating-summary--expanded');
+        $floating.find('.wc-qbt-floating-summary__panel').prop('hidden', true);
+        $toggle.attr('aria-expanded', 'false');
     }
 
     $(function () {

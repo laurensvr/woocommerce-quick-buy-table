@@ -263,12 +263,16 @@ class WC_Quick_Buy_Table {
         $this->enqueue_assets();
 
         $cart_quantities = $this->get_cart_quantities();
-        $grouped         = $this->group_products_by_category( $products );
+        $grouped         = $this->group_products_by_category( $products, $cart_quantities );
+        $cart_label      = __( 'Producten al in je winkelwagen', 'wc-quick-buy-table' );
+        $cart_note       = __( 'Deze producten staan al in je winkelwagen en worden bovenaan getoond.', 'wc-quick-buy-table' );
         $empty_text      = __( 'Nog geen producten geselecteerd.', 'wc-quick-buy-table' );
         $summary_title   = __( 'Bestellingsoverzicht', 'wc-quick-buy-table' );
         $toggle_open     = __( 'Bekijk bestelling', 'wc-quick-buy-table' );
         $toggle_close    = __( 'Sluit bestelling', 'wc-quick-buy-table' );
         $total_label     = __( 'Totaal', 'wc-quick-buy-table' );
+
+        $ordered_groups = $this->elevate_cart_products_group( $grouped, $cart_label, $cart_note );
 
         ob_start();
         ?>
@@ -277,10 +281,24 @@ class WC_Quick_Buy_Table {
             <input type="hidden" name="wc_qbt_action" value="update_cart" />
             <div class="wc-qbt-layout">
                 <div class="wc-qbt-layout__products">
-                    <?php foreach ( $grouped as $group ) : ?>
-                        <section class="wc-qbt-category">
+                    <?php foreach ( $ordered_groups as $group ) :
+                        if ( empty( $group['products'] ) ) {
+                            continue;
+                        }
+                        ?>
+                        <?php
+                        $section_classes = 'wc-qbt-category';
+
+                        if ( ! empty( $group['is_cart'] ) ) {
+                            $section_classes .= ' wc-qbt-category--cart';
+                        }
+                        ?>
+                        <section class="<?php echo esc_attr( $section_classes ); ?>">
                             <header class="wc-qbt-category__header">
                                 <h2><?php echo esc_html( $group['label'] ); ?></h2>
+                                <?php if ( ! empty( $group['note'] ) ) : ?>
+                                    <p class="wc-qbt-category__note"><?php echo esc_html( $group['note'] ); ?></p>
+                                <?php endif; ?>
                             </header>
                             <div class="wc-qbt-category__table" role="table">
                                 <div class="wc-qbt-table__row wc-qbt-table__row--head" role="row">
@@ -297,7 +315,7 @@ class WC_Quick_Buy_Table {
                                     $price_display = $product_data['price_display'];
                                     $step          = $product_data['step'];
                                     $sku           = $product->get_sku();
-                                    $cart_qty      = isset( $cart_quantities[ $product_id ] ) ? $cart_quantities[ $product_id ] : 0;
+                                    $cart_qty      = isset( $product_data['cart_quantity'] ) ? (int) $product_data['cart_quantity'] : 0;
                                     $min           = $step > 1 ? 0 : 0;
                                     $product_name  = wp_strip_all_tags( $display->get_name() );
                                     ?>
@@ -460,11 +478,12 @@ class WC_Quick_Buy_Table {
     /**
      * Group products by their primary category.
      *
-     * @param WC_Product[] $products Product instances.
+     * @param WC_Product[] $products        Product instances.
+     * @param array        $cart_quantities Quantities indexed by product/variation id.
      *
      * @return array
      */
-    protected function group_products_by_category( $products ) {
+    protected function group_products_by_category( $products, $cart_quantities = [] ) {
         $groups = [];
 
         foreach ( $products as $product ) {
@@ -487,6 +506,8 @@ class WC_Quick_Buy_Table {
                 $groups[ $term->term_id ] = [
                     'label'    => $term->name,
                     'products' => [],
+                    'note'     => '',
+                    'is_cart'  => false,
                 ];
             }
 
@@ -496,6 +517,8 @@ class WC_Quick_Buy_Table {
                 'price'         => (float) wc_get_price_to_display( $product ),
                 'price_display' => wc_price( wc_get_price_to_display( $product ) ),
                 'step'          => $this->get_quantity_step_for_product( $product ),
+                'in_cart'       => $this->product_is_in_cart( $product, $cart_quantities ),
+                'cart_quantity' => $this->get_cart_quantity_for_product( $product, $cart_quantities ),
             ];
         }
 
@@ -575,6 +598,138 @@ class WC_Quick_Buy_Table {
         $price = (float) wc_get_price_to_display( $product );
 
         return $price < 20 ? 6 : 1;
+    }
+
+    /**
+     * Determine if the product is already present in the cart.
+     *
+     * @param WC_Product $product         Product instance.
+     * @param array      $cart_quantities Quantities indexed by product/variation id.
+     *
+     * @return bool
+     */
+    protected function product_is_in_cart( $product, $cart_quantities ) {
+        $product_id = (int) $product->get_id();
+
+        if ( isset( $cart_quantities[ $product_id ] ) && $cart_quantities[ $product_id ] > 0 ) {
+            return true;
+        }
+
+        if ( $product->is_type( 'variable' ) ) {
+            foreach ( (array) $product->get_children() as $child_id ) {
+                $child_id = (int) $child_id;
+
+                if ( isset( $cart_quantities[ $child_id ] ) && $cart_quantities[ $child_id ] > 0 ) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Retrieve the quantity that is currently in the cart for the product.
+     *
+     * @param WC_Product $product         Product instance.
+     * @param array      $cart_quantities Quantities indexed by product/variation id.
+     *
+     * @return int
+     */
+    protected function get_cart_quantity_for_product( $product, $cart_quantities ) {
+        $product_id = (int) $product->get_id();
+
+        if ( isset( $cart_quantities[ $product_id ] ) ) {
+            return (int) $cart_quantities[ $product_id ];
+        }
+
+        if ( $product->is_type( 'variable' ) ) {
+            $quantity = 0;
+
+            foreach ( (array) $product->get_children() as $child_id ) {
+                $child_id = (int) $child_id;
+
+                if ( isset( $cart_quantities[ $child_id ] ) ) {
+                    $quantity += (int) $cart_quantities[ $child_id ];
+                }
+            }
+
+            return $quantity;
+        }
+
+        return 0;
+    }
+
+    /**
+     * Move any cart products to the top of the listing.
+     *
+     * @param array  $groups     Grouped products.
+     * @param string $label      Cart group label.
+     * @param string $note       Cart group note.
+     *
+     * @return array
+     */
+    protected function elevate_cart_products_group( $groups, $label, $note ) {
+        $cart_products = [];
+
+        foreach ( $groups as $group_id => &$group ) {
+            if ( empty( $group['products'] ) ) {
+                continue;
+            }
+
+            $remaining = [];
+
+            foreach ( $group['products'] as $product_data ) {
+                if ( ! empty( $product_data['in_cart'] ) ) {
+                    $cart_products[] = $product_data;
+                } else {
+                    $remaining[] = $product_data;
+                }
+            }
+
+            $group['products'] = $remaining;
+        }
+        unset( $group );
+
+        $ordered_groups = [];
+
+        if ( ! empty( $cart_products ) ) {
+            usort(
+                $cart_products,
+                static function ( $a, $b ) {
+                    return strcasecmp( $a['display']->get_name(), $b['display']->get_name() );
+                }
+            );
+
+            $ordered_groups[] = [
+                'label'    => $label,
+                'note'     => $note,
+                'products' => $cart_products,
+                'is_cart'  => true,
+            ];
+        }
+
+        foreach ( $groups as $group ) {
+            if ( empty( $group['products'] ) ) {
+                continue;
+            }
+
+            if ( ! isset( $group['note'] ) ) {
+                $group['note'] = '';
+            }
+
+            if ( ! isset( $group['is_cart'] ) ) {
+                $group['is_cart'] = false;
+            }
+
+            $ordered_groups[] = $group;
+        }
+
+        if ( empty( $ordered_groups ) ) {
+            return $groups;
+        }
+
+        return $ordered_groups;
     }
 
     /**
