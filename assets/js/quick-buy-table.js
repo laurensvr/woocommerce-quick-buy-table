@@ -50,6 +50,64 @@
         return quantity;
     }
 
+    function getEmptyText($element) {
+        if (!$element || !$element.length) {
+            return '';
+        }
+
+        var emptyText = $element.data('emptyText');
+        if (emptyText) {
+            return emptyText;
+        }
+
+        if (typeof WCQBT !== 'undefined' && WCQBT.summaryEmptyText) {
+            return WCQBT.summaryEmptyText;
+        }
+
+        return 'Geen producten geselecteerd.';
+    }
+
+    function renderSummaryList($container, items) {
+        if (!$container || !$container.length) {
+            return;
+        }
+
+        var emptyText = getEmptyText($container);
+        $container.empty();
+
+        if (!items.length) {
+            $('<li/>', {
+                'class': 'wc-qbt-summary-item wc-qbt-summary-item--empty',
+                text: emptyText
+            }).appendTo($container);
+            return;
+        }
+
+        items.forEach(function (item) {
+            var $item = $('<li/>', {
+                'class': 'wc-qbt-summary-item',
+                'data-product-id': item.id
+            });
+
+            $('<span/>', {
+                'class': 'wc-qbt-summary-item__name',
+                text: item.name
+            }).appendTo($item);
+
+            $('<span/>', {
+                'class': 'wc-qbt-summary-item__meta',
+                text: item.quantity + ' × ' + formatPrice(item.price)
+            }).appendTo($item);
+
+            $('<span/>', {
+                'class': 'wc-qbt-summary-item__subtotal',
+                text: formatPrice(item.subtotal)
+            }).appendTo($item);
+
+            $item.appendTo($container);
+        });
+    }
+
     function updateRow($row) {
         var $input = $row.find('input[type="number"]');
         if (!$input.length) {
@@ -68,9 +126,15 @@
     function updateSummary($form) {
         var totalQuantity = 0;
         var totalAmount = 0;
+        var items = [];
 
         $form.find('.wc-qbt-table__row').each(function () {
             var $row = $(this);
+            var productId = $row.data('productId');
+            if (!productId) {
+                return;
+            }
+
             var $input = $row.find('input[type="number"]');
             if (!$input.length) {
                 return;
@@ -78,16 +142,39 @@
 
             var quantity = parseInt($input.val(), 10) || 0;
             var price = parseFloat($row.data('price')) || 0;
+            var name = $row.data('productName');
+            if (!name) {
+                name = $.trim($row.find('.wc-qbt-product__name').text());
+            }
 
             totalQuantity += quantity;
             totalAmount += quantity * price;
+
+            if (quantity > 0) {
+                items.push({
+                    id: productId,
+                    name: name,
+                    quantity: quantity,
+                    price: price,
+                    subtotal: quantity * price
+                });
+            }
         });
 
-        var quantityLabel = (typeof WCQBT !== 'undefined' ? WCQBT.summaryQuantityLabel : 'Totaal aantal') + ': ' + totalQuantity;
-        var amountLabel = (typeof WCQBT !== 'undefined' ? WCQBT.summaryAmountLabel : 'Totaal bedrag') + ': ' + formatPrice(totalAmount);
+        var quantityLabel = (typeof WCQBT !== 'undefined' ? WCQBT.summaryQuantityLabel : 'Totaal aantal producten') + ': ' + totalQuantity;
+        var amountLabel = (typeof WCQBT !== 'undefined' ? WCQBT.summaryAmountLabel : 'Totale waarde') + ': ' + formatPrice(totalAmount);
+        var shortLabel = (typeof WCQBT !== 'undefined' ? WCQBT.summaryShortLabel : 'Artikelen');
 
         $form.find('.wc-qbt-summary__quantity').text(quantityLabel);
         $form.find('.wc-qbt-summary__amount').text(amountLabel);
+
+        renderSummaryList($form.find('.wc-qbt-summary__items'), items);
+        renderSummaryList($form.find('.wc-qbt-floating-summary__items'), items);
+
+        $form.find('.wc-qbt-floating-summary__short-quantity').text(shortLabel + ': ' + totalQuantity);
+        $form.find('.wc-qbt-floating-summary__short-amount').text(formatPrice(totalAmount));
+        $form.find('.wc-qbt-floating-summary__quantity').text(quantityLabel);
+        $form.find('.wc-qbt-floating-summary__amount').text(amountLabel);
     }
 
     function bindQuantityButtons($form) {
@@ -122,6 +209,67 @@
         });
     }
 
+    function initFloatingSummary($form) {
+        var $floating = $form.find('.wc-qbt-floating-summary');
+        if (!$floating.length) {
+            return;
+        }
+
+        var $toggle = $floating.find('.wc-qbt-floating-summary__toggle');
+        var $panel = $floating.find('.wc-qbt-floating-summary__panel');
+        var openLabel = $toggle.data('openLabel') || (typeof WCQBT !== 'undefined' ? WCQBT.summaryToggleOpen : 'Bekijk bestelling');
+        var closeLabel = $toggle.data('closeLabel') || (typeof WCQBT !== 'undefined' ? WCQBT.summaryToggleClose : 'Sluit bestelling');
+
+        function setExpanded(expanded) {
+            $toggle.attr('aria-expanded', expanded ? 'true' : 'false');
+            $floating.toggleClass('wc-qbt-floating-summary--expanded', expanded);
+            $floating.find('.wc-qbt-floating-summary__toggle-text').text(expanded ? closeLabel : openLabel);
+
+            if (expanded) {
+                $panel.removeAttr('hidden').attr('aria-hidden', 'false');
+            } else {
+                $panel.attr('hidden', 'hidden').attr('aria-hidden', 'true');
+            }
+        }
+
+        $floating.find('.wc-qbt-floating-summary__toggle-text').text(openLabel);
+
+        $toggle.on('click', function (event) {
+            event.preventDefault();
+            var expanded = $toggle.attr('aria-expanded') === 'true';
+            setExpanded(!expanded);
+        });
+
+        $floating.on('click', function (event) {
+            if (!$floating.hasClass('wc-qbt-floating-summary--expanded')) {
+                return;
+            }
+
+            if ($(event.target).closest('.wc-qbt-floating-summary__panel, .wc-qbt-floating-summary__toggle').length) {
+                return;
+            }
+
+            setExpanded(false);
+        });
+
+        $(document)
+            .off('keyup.wcqbtFloating')
+            .on('keyup.wcqbtFloating', function (event) {
+                if (event.key !== 'Escape') {
+                    return;
+                }
+
+                if (!$floating.hasClass('wc-qbt-floating-summary--expanded')) {
+                    return;
+                }
+
+                setExpanded(false);
+                $toggle.trigger('focus');
+            });
+
+        setExpanded(false);
+    }
+
     $(function () {
         var $form = $('.wc-qbt-form');
         if (!$form.length) {
@@ -132,6 +280,7 @@
             updateRow($(this));
         });
 
+        initFloatingSummary($form);
         updateSummary($form);
         bindQuantityButtons($form);
     });
