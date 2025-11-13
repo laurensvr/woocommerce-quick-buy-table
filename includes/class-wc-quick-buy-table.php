@@ -129,6 +129,18 @@ class WC_Quick_Buy_Table {
 
         check_admin_referer( 'wc_qbt_update_cart', 'wc_qbt_nonce' );
 
+        $initial_state_encoded = isset( $_POST['wc_qbt_cart_state'] ) ? sanitize_text_field( wp_unslash( $_POST['wc_qbt_cart_state'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        $initial_state_hash    = isset( $_POST['wc_qbt_cart_state_hash'] ) ? sanitize_text_field( wp_unslash( $_POST['wc_qbt_cart_state_hash'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        $initial_state         = $this->decode_cart_state( $initial_state_encoded, $initial_state_hash );
+        $current_state         = $this->get_cart_snapshot_data();
+
+        if ( ! $this->cart_states_match( $initial_state, $current_state ) ) {
+            wc_add_notice( __( 'Je winkelwagen is gewijzigd sinds het openen van de bestellijst. We hebben je bestelling bijgewerkt zodat je alle producten opnieuw kunt controleren.', 'wc-quick-buy-table' ), 'notice' );
+
+            wp_safe_redirect( $this->get_current_form_url() );
+            exit;
+        }
+
         $quantities = isset( $_POST['quantities'] ) ? (array) wp_unslash( $_POST['quantities'] ) : []; // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $quantities = array_map( 'wc_clean', $quantities );
 
@@ -256,6 +268,9 @@ class WC_Quick_Buy_Table {
 
         $products        = $this->get_products_for_current_user();
         $cart_quantities = $this->get_cart_quantities();
+        $cart_state_data = $this->get_cart_snapshot_data();
+        $cart_state      = $this->encode_cart_state( $cart_state_data );
+        $cart_state_hash = $this->hash_cart_state( $cart_state );
         $cart_only_products = $this->get_cart_products_not_in_list( array_keys( $products ), $cart_quantities );
 
         if ( ! empty( $cart_only_products ) ) {
@@ -284,6 +299,8 @@ class WC_Quick_Buy_Table {
         <form class="wc-qbt-form" method="post">
             <?php wp_nonce_field( 'wc_qbt_update_cart', 'wc_qbt_nonce' ); ?>
             <input type="hidden" name="wc_qbt_action" value="update_cart" />
+            <input type="hidden" name="wc_qbt_cart_state" value="<?php echo esc_attr( $cart_state ); ?>" />
+            <input type="hidden" name="wc_qbt_cart_state_hash" value="<?php echo esc_attr( $cart_state_hash ); ?>" />
             <div class="wc-qbt-layout">
                 <div class="wc-qbt-layout__products">
                     <?php foreach ( $ordered_groups as $group ) :
@@ -590,6 +607,180 @@ class WC_Quick_Buy_Table {
         }
 
         return $quantities;
+    }
+
+    /**
+     * Create a normalized snapshot of the current cart contents.
+     *
+     * @return array
+     */
+    protected function get_cart_snapshot_data() {
+        $snapshot = [];
+
+        if ( ! WC()->cart ) {
+            return $snapshot;
+        }
+
+        foreach ( WC()->cart->get_cart() as $item ) {
+            $product_id = ! empty( $item['variation_id'] ) ? (int) $item['variation_id'] : (int) $item['product_id'];
+
+            if ( $product_id <= 0 ) {
+                continue;
+            }
+
+            if ( ! isset( $snapshot[ $product_id ] ) ) {
+                $snapshot[ $product_id ] = 0;
+            }
+
+            $snapshot[ $product_id ] += (int) $item['quantity'];
+        }
+
+        ksort( $snapshot );
+
+        return $snapshot;
+    }
+
+    /**
+     * Encode cart state for transport.
+     *
+     * @param array $state Cart snapshot.
+     *
+     * @return string
+     */
+    protected function encode_cart_state( $state ) {
+        if ( ! is_array( $state ) ) {
+            $state = [];
+        }
+
+        $normalized = [];
+
+        foreach ( $state as $product_id => $quantity ) {
+            $product_id = (int) $product_id;
+
+            if ( $product_id <= 0 ) {
+                continue;
+            }
+
+            $normalized[ $product_id ] = max( 0, (int) $quantity );
+        }
+
+        ksort( $normalized );
+
+        return base64_encode( wp_json_encode( $normalized ) );
+    }
+
+    /**
+     * Generate a hash for the encoded cart state to prevent tampering.
+     *
+     * @param string $encoded_state Encoded state string.
+     *
+     * @return string
+     */
+    protected function hash_cart_state( $encoded_state ) {
+        return wp_hash( (string) $encoded_state . '|' . get_current_user_id() );
+    }
+
+    /**
+     * Decode the posted cart state once verified.
+     *
+     * @param string $encoded_state Encoded state string.
+     * @param string $hash          Hash included in the request.
+     *
+     * @return array
+     */
+    protected function decode_cart_state( $encoded_state, $hash ) {
+        if ( empty( $encoded_state ) || empty( $hash ) ) {
+            return [];
+        }
+
+        $expected = $this->hash_cart_state( $encoded_state );
+
+        if ( ! hash_equals( $expected, (string) $hash ) ) {
+            return [];
+        }
+
+        $decoded = base64_decode( $encoded_state, true );
+
+        if ( false === $decoded ) {
+            return [];
+        }
+
+        $data = json_decode( $decoded, true );
+
+        if ( ! is_array( $data ) ) {
+            return [];
+        }
+
+        $normalized = [];
+
+        foreach ( $data as $product_id => $quantity ) {
+            $product_id = (int) $product_id;
+
+            if ( $product_id <= 0 ) {
+                continue;
+            }
+
+            $normalized[ $product_id ] = max( 0, (int) $quantity );
+        }
+
+        ksort( $normalized );
+
+        return $normalized;
+    }
+
+    /**
+     * Determine whether two cart states match.
+     *
+     * @param array $initial_state Snapshot from initial render.
+     * @param array $current_state Snapshot at submission time.
+     *
+     * @return bool
+     */
+    protected function cart_states_match( $initial_state, $current_state ) {
+        if ( ! is_array( $initial_state ) ) {
+            $initial_state = [];
+        }
+
+        if ( ! is_array( $current_state ) ) {
+            $current_state = [];
+        }
+
+        return $initial_state === $current_state;
+    }
+
+    /**
+     * Determine the best URL to return the shopper to when the cart changed mid-flow.
+     *
+     * @return string
+     */
+    protected function get_current_form_url() {
+        if ( isset( $_POST['_wp_http_referer'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+            $referer_field = trim( wp_unslash( $_POST['_wp_http_referer'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+
+            if ( $referer_field ) {
+                $validated = wp_validate_redirect( $referer_field, false );
+
+                if ( $validated ) {
+                    return $validated;
+                }
+
+                if ( '/' === substr( $referer_field, 0, 1 ) ) {
+                    return home_url( $referer_field );
+                }
+            }
+        }
+
+        $referer = wp_get_referer();
+
+        if ( $referer ) {
+            return $referer;
+        }
+
+        if ( ! empty( $_SERVER['REQUEST_URI'] ) ) {
+            return home_url( wp_unslash( $_SERVER['REQUEST_URI'] ) );
+        }
+
+        return home_url( '/' );
     }
 
     /**
