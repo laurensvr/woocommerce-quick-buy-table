@@ -95,12 +95,22 @@
     align-items: center;
 }
 
-.wc-qbt-product__thumbnail img {
+.wc-qbt-product__thumbnail {
     width: 80px;
     height: 80px;
-    object-fit: cover;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #ffffff;
     border-radius: 8px;
     border: 1px solid #f0f0f0;
+    overflow: hidden;
+}
+
+.wc-qbt-product__thumbnail img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
 }
 
 .wc-qbt-product__name {

@@ -46,9 +46,17 @@ class WC_Quick_Buy_Table {
      * Constructor.
      */
     protected function __construct() {
+        add_action( 'after_setup_theme', [ $this, 'register_image_sizes' ] );
         add_action( 'init', [ $this, 'register_shortcode' ] );
         add_action( 'wp_enqueue_scripts', [ $this, 'register_assets' ] );
         add_action( 'template_redirect', [ $this, 'maybe_process_form_submission' ] );
+    }
+
+    /**
+     * Register custom image sizes.
+     */
+    public function register_image_sizes() {
+        add_image_size( 'quick-order-thumbnail', 256, 256, false );
     }
 
     /**
@@ -352,8 +360,8 @@ class WC_Quick_Buy_Table {
                                     <div class="wc-qbt-table__row" role="row" data-product-id="<?php echo esc_attr( $product_id ); ?>" data-price="<?php echo esc_attr( $price ); ?>" data-product-name="<?php echo esc_attr( $product_name ); ?>">
                                         <div class="wc-qbt-table__cell wc-qbt-table__cell--product" role="cell">
                                             <div class="wc-qbt-product">
-                                                <div class="wc-qbt-product__thumbnail">
-                                                    <?php echo $display->get_image( 'woocommerce_thumbnail' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                                              <div class="wc-qbt-product__thumbnail">
+                                              <?php echo $display->get_image( 'quick-order-thumbnail' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
                                                 </div>
                                                 <div class="wc-qbt-product__meta">
                                                     <span class="wc-qbt-product__name"><?php echo esc_html( $display->get_name() ); ?></span>
