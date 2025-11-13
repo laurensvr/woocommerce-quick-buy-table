@@ -141,8 +141,9 @@ class WC_Quick_Buy_Table {
             exit;
         }
 
-        $quantities = isset( $_POST['quantities'] ) ? (array) wp_unslash( $_POST['quantities'] ) : []; // phpcs:ignore WordPress.Security.NonceVerification.Missing
-        $quantities = array_map( 'wc_clean', $quantities );
+        $quantities            = isset( $_POST['quantities'] ) ? (array) wp_unslash( $_POST['quantities'] ) : []; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        $quantities            = array_map( 'wc_clean', $quantities );
+        $bestellijst_product_ids = [];
 
         foreach ( $quantities as $product_id => $quantity ) {
             $product_id = absint( $product_id );
@@ -159,7 +160,13 @@ class WC_Quick_Buy_Table {
 
             $quantity = $this->normalize_quantity_for_product( $product, $quantity );
             $this->update_cart_quantity( $product, $quantity );
+
+            if ( $quantity > 0 ) {
+                $bestellijst_product_ids[] = $product->get_id();
+            }
         }
+
+        $this->add_products_to_bestellijst( $bestellijst_product_ids );
 
         wc_add_notice( __( 'Je bestellijst is bijgewerkt. Controleer je bestelling en rond afrekenen af.', 'wc-quick-buy-table' ) );
 
@@ -296,6 +303,7 @@ class WC_Quick_Buy_Table {
 
         ob_start();
         ?>
+        <?php if ( function_exists( 'wc_print_notices' ) ) { wc_print_notices(); } ?>
         <form class="wc-qbt-form" method="post">
             <?php wp_nonce_field( 'wc_qbt_update_cart', 'wc_qbt_nonce' ); ?>
             <input type="hidden" name="wc_qbt_action" value="update_cart" />
@@ -495,6 +503,51 @@ class WC_Quick_Buy_Table {
         }
 
         return array_values( array_unique( array_filter( array_map( 'absint', $product_ids ) ) ) );
+    }
+
+    /**
+     * Ensure that provided products are stored in the user's bestellijst.
+     *
+     * @param int[] $product_ids Product IDs to store.
+     */
+    protected function add_products_to_bestellijst( $product_ids ) {
+        $user_id = get_current_user_id();
+
+        if ( $user_id <= 0 ) {
+            return;
+        }
+
+        $product_ids = array_values( array_unique( array_filter( array_map( 'absint', (array) $product_ids ) ) ) );
+
+        if ( empty( $product_ids ) ) {
+            return;
+        }
+
+        $existing_raw = get_user_meta( $user_id, 'wishlist_ianenwijn', true );
+        $existing_ids = [];
+
+        if ( $existing_raw ) {
+            $existing_ids = array_filter(
+                array_map(
+                    'absint',
+                    array_map( 'trim', explode( ',', (string) $existing_raw ) )
+                )
+            );
+        }
+
+        $merged_ids = $existing_ids;
+
+        foreach ( $product_ids as $product_id ) {
+            if ( ! in_array( $product_id, $merged_ids, true ) ) {
+                $merged_ids[] = $product_id;
+            }
+        }
+
+        $updated_value = implode( ',', $merged_ids );
+
+        if ( $updated_value !== (string) $existing_raw ) {
+            update_user_meta( $user_id, 'wishlist_ianenwijn', $updated_value );
+        }
     }
 
     /**
