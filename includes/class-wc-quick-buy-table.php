@@ -293,7 +293,7 @@ class WC_Quick_Buy_Table {
                                 <div class="wc-qbt-table__cell wc-qbt-table__cell--product" role="cell">
                                     <div class="wc-qbt-product">
                                         <div class="wc-qbt-product__thumbnail">
-                                            <?php echo $display->get_image( 'woocommerce_thumbnail' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                                            <?php echo $display->get_image( 'full' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
                                         </div>
                                         <div class="wc-qbt-product__meta">
                                             <span class="wc-qbt-product__name"><?php echo esc_html( $display->get_name() ); ?></span>
