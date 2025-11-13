@@ -397,15 +397,19 @@ class WC_Quick_Buy_Table {
                     </div>
                 </aside>
             </div>
+            <?php
+            $floating_panel_id = function_exists( 'wp_unique_id' ) ? wp_unique_id( 'wc-qbt-floating-summary-panel-' ) : uniqid( 'wc-qbt-floating-summary-panel-', false );
+            ?>
             <div class="wc-qbt-floating-summary" data-empty-text="<?php echo esc_attr( $empty_text ); ?>">
-                <button type="button" class="wc-qbt-floating-summary__toggle" aria-expanded="false" data-open-label="<?php echo esc_attr( $toggle_open ); ?>" data-close-label="<?php echo esc_attr( $toggle_close ); ?>">
+                <div class="wc-qbt-floating-summary__backdrop" aria-hidden="true"></div>
+                <button type="button" class="wc-qbt-floating-summary__toggle" aria-expanded="false" aria-controls="<?php echo esc_attr( $floating_panel_id ); ?>" data-open-label="<?php echo esc_attr( $toggle_open ); ?>" data-close-label="<?php echo esc_attr( $toggle_close ); ?>">
                     <span class="wc-qbt-floating-summary__label"><?php echo esc_html( $total_label ); ?></span>
                     <span class="wc-qbt-floating-summary__short-amount"></span>
                     <span class="wc-qbt-floating-summary__short-quantity"></span>
                     <span class="wc-qbt-floating-summary__toggle-text"><?php echo esc_html( $toggle_open ); ?></span>
                     <span class="wc-qbt-floating-summary__caret" aria-hidden="true"></span>
                 </button>
-                <div class="wc-qbt-floating-summary__panel" hidden>
+                <div id="<?php echo esc_attr( $floating_panel_id ); ?>" class="wc-qbt-floating-summary__panel" hidden aria-hidden="true">
                     <ul class="wc-qbt-floating-summary__items" data-empty-text="<?php echo esc_attr( $empty_text ); ?>"></ul>
                     <div class="wc-qbt-floating-summary__totals">
                         <span class="wc-qbt-floating-summary__quantity"></span>

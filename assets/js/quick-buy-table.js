@@ -216,24 +216,58 @@
         }
 
         var $toggle = $floating.find('.wc-qbt-floating-summary__toggle');
+        var $panel = $floating.find('.wc-qbt-floating-summary__panel');
         var openLabel = $toggle.data('openLabel') || (typeof WCQBT !== 'undefined' ? WCQBT.summaryToggleOpen : 'Bekijk bestelling');
         var closeLabel = $toggle.data('closeLabel') || (typeof WCQBT !== 'undefined' ? WCQBT.summaryToggleClose : 'Sluit bestelling');
 
-        $floating.find('.wc-qbt-floating-summary__toggle-text').text(openLabel);
-
-        $toggle.on('click', function () {
-            var expanded = $toggle.attr('aria-expanded') === 'true';
-            expanded = !expanded;
+        function setExpanded(expanded) {
             $toggle.attr('aria-expanded', expanded ? 'true' : 'false');
             $floating.toggleClass('wc-qbt-floating-summary--expanded', expanded);
-            $floating.find('.wc-qbt-floating-summary__panel').prop('hidden', !expanded);
             $floating.find('.wc-qbt-floating-summary__toggle-text').text(expanded ? closeLabel : openLabel);
+
+            if (expanded) {
+                $panel.removeAttr('hidden').attr('aria-hidden', 'false');
+            } else {
+                $panel.attr('hidden', 'hidden').attr('aria-hidden', 'true');
+            }
+        }
+
+        $floating.find('.wc-qbt-floating-summary__toggle-text').text(openLabel);
+
+        $toggle.on('click', function (event) {
+            event.preventDefault();
+            var expanded = $toggle.attr('aria-expanded') === 'true';
+            setExpanded(!expanded);
         });
 
-        // Ensure the panel respects the initial collapsed state on load.
-        $floating.removeClass('wc-qbt-floating-summary--expanded');
-        $floating.find('.wc-qbt-floating-summary__panel').prop('hidden', true);
-        $toggle.attr('aria-expanded', 'false');
+        $floating.on('click', function (event) {
+            if (!$floating.hasClass('wc-qbt-floating-summary--expanded')) {
+                return;
+            }
+
+            if ($(event.target).closest('.wc-qbt-floating-summary__panel, .wc-qbt-floating-summary__toggle').length) {
+                return;
+            }
+
+            setExpanded(false);
+        });
+
+        $(document)
+            .off('keyup.wcqbtFloating')
+            .on('keyup.wcqbtFloating', function (event) {
+                if (event.key !== 'Escape') {
+                    return;
+                }
+
+                if (!$floating.hasClass('wc-qbt-floating-summary--expanded')) {
+                    return;
+                }
+
+                setExpanded(false);
+                $toggle.trigger('focus');
+            });
+
+        setExpanded(false);
     }
 
     $(function () {
